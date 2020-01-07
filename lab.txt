@@ -1,0 +1,459 @@
+#include <iostream>
+#include <stdlib.h>
+
+using namespace std;
+
+struct PCB
+{
+    private:
+    int pageTableSize;
+    int PID;
+    int * pageTablePtr;
+
+    public:
+    PCB * next;
+
+    //constructor
+    PCB()
+    {
+    }
+
+    //destructor
+    ~PCB()
+    {
+        delete []pageTablePtr;
+    }
+
+    //constructor
+    PCB(int size,int PID,int * array)
+    {
+        this->pageTableSize=size;
+        this->PID=PID;
+        this->pageTablePtr=new int[size];
+        for(int i=0;i<size;i++)
+        {
+           *(pageTablePtr+i)=array[i];
+        }
+    }
+
+    //returns the PID for a specific PCB
+    int getPID()
+    {
+        return this->PID;
+    }
+
+    //returns the number of blocks allocated for this process
+    int getPageTableSize()
+    {
+        return pageTableSize;
+    }
+    
+    //returns pointer to the first element of the pagetable
+    int * getPtrToPageTable()
+    {
+        return pageTablePtr;
+    }
+
+    //gets the specific blocks that were allocated for this process
+    void getBlocks()
+    {
+        int counter=0;
+        cout<<"\nThe blocks for this PCB are: \n";
+        for(int i=0;i<getPageTableSize();i++)
+        {
+            if(*(pageTablePtr+i)<99)
+            {
+                cout<<"[ "<<*(pageTablePtr+i)<<"  ]";
+                counter++;
+            }
+
+            else if(*(pageTablePtr+i)>99)
+            {
+                cout<<"[ "<<*(pageTablePtr+i)<<" ]";
+                counter++;
+            }
+    
+            if(counter==10)
+            {
+                cout<<endl;
+                counter=0;
+            }
+        }
+        cout<<endl;
+    }
+};
+
+struct MBT
+{
+    int availBlocks=992;
+    bool stateArray [1024]={false};
+    static MBT * instance;
+
+    MBT()
+    {
+        reserveFirst32();
+    }
+
+    //reserves the first 32 blocks for the OS
+    void reserveFirst32()
+    {
+        for(int i=0;i<32;i++)
+        {
+            stateArray[i]=true;
+        }
+    }
+
+    //prints the current state of the MBT
+    void printMBT()
+    {
+        int counter=0;
+        int size=sizeof(stateArray)/sizeof(stateArray[0]);
+        cout<<"\nMBT state\n";
+        cout<<"\nThe first 32 blocks are reserved for the OS\n";
+        cout<<"\nLEGEND: "<<"0=Occupied "<<"1=Free \n";
+        cout<<endl;
+
+        for (int i=0;i<size;i++)
+        {
+            if(stateArray[i]==false)
+            {
+                cout<<"[1]";
+            }
+
+            else
+            {
+                cout<<"[0]";
+            }
+             
+            counter++;
+
+            if(counter==32)
+            {
+                cout<<endl;
+                counter=0;
+            }
+        }
+    }
+
+    //marks the blocks that were previously occupied as free to use again
+    void returnMemory(int * ptrToPageTable, int size)
+    {
+        for(int i=*(ptrToPageTable);i<size+*(ptrToPageTable);i++)
+        {
+            stateArray[i]=false;
+        }
+
+        addAvailBlocks(size);
+    }
+
+    //checks if enough memory blocks exist for a process, creates a PCB with the memory size, an ID, and the blocks it was assigned
+    PCB * reserveMemoryForProcess(int requestedMemory, int ID)
+    {   
+        int blockArr[requestedMemory];
+        int counter=0;
+        PCB * pcb;
+
+        if(requestedMemory>availBlocks)
+        {
+            cout<<"\nError: There is not enough memory!"<<endl;
+        }
+
+        else
+        {      
+            int size=sizeof(stateArray)/sizeof(stateArray[0]);
+
+            for(int i=32;i<size;i++)
+            {
+                if(stateArray[i]==false && counter < requestedMemory)
+                {
+                    stateArray[i]=true;
+                    blockArr[counter]=i;
+                    counter++;
+                }
+            }
+
+            removeAvailBlocks(counter);
+        }
+
+        pcb=new PCB(requestedMemory,ID,blockArr);
+
+        return pcb;
+    }
+
+    //returns the total number of blocks available in the MBT
+    int returnAvailBlocks()
+    {
+        return availBlocks;
+    }
+
+    //marks blocks in memory as occupied 
+    void removeAvailBlocks(int counter)
+    {
+        availBlocks=returnAvailBlocks()-counter;
+    }
+
+    //updates the blocks in memory that are free to use
+    void addAvailBlocks(int blocksToAdd)
+    {
+        availBlocks=returnAvailBlocks()+blocksToAdd;
+    }
+};
+
+class LinkedList
+{
+    private:
+    PCB * head;
+    PCB * tail;
+
+    public:
+    LinkedList()
+    {
+        head=NULL;
+        tail=NULL;
+    }
+
+    //adds a new PCB to the queue
+    void add(PCB * newNode)
+    {
+        PCB * temp;
+        temp=newNode;
+        temp->next=NULL;
+
+        if(head==NULL)
+        {
+            head=newNode;
+            tail=newNode;
+            temp=NULL;
+        }
+        else
+        {
+            tail->next=temp;
+            tail=temp;
+        } 
+    }
+
+    //returns the number of items in the list
+    int getSizeOfList()
+    {
+        PCB * temp=new PCB;
+        temp=head;
+        int counter=0;
+
+        while(temp!=NULL)
+        {
+            counter++;
+            temp=temp->next;
+        }
+
+        return counter;
+    }
+
+    //searches for the process associated with a PID
+    bool searchForPID(int PID, MBT & mbt)
+    {
+        PCB * temp=new PCB;
+        temp=head;
+        //counter that points to the location of the PCB
+        int location=0;
+        //states whether a PCB with the PID was found
+        bool wasItemFound=false;
+
+        while(temp!=NULL)
+        {
+            //if the PCB associated with the PID is found, delete it.
+            if(temp->getPID()==PID)
+            {
+                deletePCBwithPID(location, mbt);
+                return true;
+            }
+
+            location++;
+            temp=temp->next;
+        }
+        return wasItemFound;
+    }
+
+    //deletes a PCB using its specific location in the list
+    void deletePCBwithPID(int location, MBT & mbt)
+    {
+        //case where the head is to be deleted
+        if(location==0)
+        {
+            PCB *temp=new PCB;
+            temp=head;
+            head=head->next;
+            mbt.returnMemory(temp->getPtrToPageTable(),temp->getPageTableSize());
+            delete temp;
+        }
+
+        //other cases 
+        else
+        {
+            PCB * current=new PCB;
+            PCB * previous=new PCB;
+            current=head;
+
+            for(int i=0;i<location;i++)
+            {
+                previous=current;
+                current=current->next;      
+            }
+
+            mbt.returnMemory(previous->getPtrToPageTable(),previous->getPageTableSize());
+            previous->next=current->next;
+        }
+    }
+
+    //outputs the items in the list
+    void printList()
+    {
+        PCB * temp=new PCB;
+        temp=head;
+
+        if(temp==NULL)
+        {
+            cout<<"\nThere are currently no processes in the queue!\n";
+        }
+
+        else
+        {        
+            while(temp!=NULL)
+            {
+                cout<<"\nThe process ID is: "<<temp->getPID()<<endl;
+                cout<<"\nThe size of the process is: "<<temp->getPageTableSize()<<endl;
+                temp->getBlocks();
+                temp=temp->next;
+            }
+        }
+    }
+
+    //frees the memory for a all the PCBs in the Queue
+    void freePCBMemory()
+    {
+        PCB * temp=new PCB;
+        temp=head;
+        
+        while(temp!=NULL)
+        {
+            temp->~PCB();
+            cout<<"\nDELETED\n";
+            temp=temp->next;
+        }
+    }
+
+    //used as a menu for option 4
+    void printListPIDs()
+    {
+        PCB * temp=new PCB;
+        temp=head;
+
+        if(temp==NULL)
+        {
+            cout<<"\nNothing in the queue to show!\n";
+        }
+
+        else
+        {
+            cout<<"\nThere are processes in the Queue...\n";
+            while(temp!=NULL)
+            {
+                cout<<"\nThe process ID is: "<<temp->getPID()<<endl;
+                temp=temp->next;
+            }
+        }
+        cout<<"\nAre you sure you want to exit? (Y or N)\n";
+    }
+};
+
+//creates random ID
+int randomNumberGen()
+{
+    int number=rand() % (250-10+1) + 10;
+    return number;
+}
+
+int main()
+{
+    bool inMenu=true;
+    MBT mbt;
+    LinkedList list;
+    PCB * pcb;
+    int ID=0;
+
+    while(inMenu==true)
+    {
+        int choice;
+        int memoryBlocks;
+        int indexToRemove;
+        char selection;
+        bool wasItemFound=false;
+        
+        cout<<"\nChoose an action from the Menu\n"<<endl;
+        cout<<"1.Initiate a process.\n";
+        cout<<"2.Print system state\n";
+        cout<<"3.Terminate a process with a specific PID\n";
+        cout<<"4.Exit\n";
+
+        cin>>choice;
+
+        switch (choice)
+        {
+            case 1:
+                //generates random number between 10-250
+                memoryBlocks=randomNumberGen();
+                //creates PCB with a certain memory size and ID, then adds the PCB to the ready queue
+                list.add(mbt.reserveMemoryForProcess(memoryBlocks, ID));
+                //prepares next ID
+                ID++;
+                break;
+
+            case 2:
+                //prints the items of the linked list
+                list.printList();
+                //prints the state of the MBT
+                mbt.printMBT();
+                break;
+
+            case 3:
+                cout<<"\nEnter the ID of the process you want to terminate:\n";
+                cin>>indexToRemove;
+
+                //checks whether the item specified was found in the list
+                wasItemFound=list.searchForPID(indexToRemove,mbt);
+
+                if(wasItemFound==false)
+                {
+                    cout<<"\nThe item you specified was not in the list!\n";
+                }
+                else
+                    cout<<"\nOne process was deleted!\n";
+                break;
+
+            case 4:
+                //prints the PID for the processes that exist before prompting the user to input whether they want to quit or not
+                list.printListPIDs();
+                cin>>selection;
+
+                if(selection=='Y')
+                {
+                    //frees the memory of every PCB in the list
+                    list.freePCBMemory();
+                    inMenu=false;
+                    break;
+                }
+
+                if(selection=='N')
+                {
+                    break;
+                }
+        }
+    }
+}
+
+
+
+
+
+
+
+
